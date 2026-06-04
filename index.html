@@ -402,7 +402,8 @@
                                 <tr><td style={{padding: '4px'}}>Giá trị đơn (chưa VAT):</td><td className="text-right">{formatCurrency(metrics.revenue)}</td></tr>
                                 <tr><td style={{padding: '4px'}}>Thuế VAT ({inputs.vatRate}%):</td><td className="text-right">{formatCurrency(vat)}</td></tr>
                                 <tr style={{backgroundColor: '#ecfdf5'}}><td style={{padding: '4px'}}><strong>Tổng giá trị (có VAT):</strong></td><td className="text-right" style={{fontWeight: 'bold'}}>{formatCurrency(totalWithVat)}</td></tr>
-                                <tr><td style={{padding: '4px'}}>(-) Giá vốn & CP:</td><td className="text-right">-{formatCurrency(metrics.revenue - metrics.accountingProfit)}</td></tr>
+                                <tr><td style={{padding: '4px'}}>(-) Giá vốn hàng:</td><td className="text-right">-{formatCurrency(metrics.revenue - metrics.accountingProfit - metrics.totalAdditionalCosts)}</td></tr>
+                                <tr><td style={{padding: '4px'}}>(-) Chi phí Gia công &amp; Vận chuyển:</td><td className="text-right">-{formatCurrency(metrics.totalAdditionalCosts)}</td></tr>
                                 <tr style={{backgroundColor: '#f1f5f9'}}><td style={{padding: '4px'}}><strong>= Lợi nhuận Kế toán:</strong></td><td className="text-right">{formatCurrency(metrics.accountingProfit)}</td></tr>
                                 <tr><td style={{padding: '4px', color: '#666'}}>(-) Chi phí vốn & Rủi ro (lãi vay, dự phòng):</td><td className="text-right" style={{color: '#666'}}>-{formatCurrency(metrics.accountingProfit - metrics.realProfit)}</td></tr>
                                 <tr style={{borderTop: '2px solid #000'}}><td style={{padding: '6px', fontSize: '12pt'}}><strong>KẾT QUẢ THỰC (NET PROFIT):</strong></td><td className="text-right" style={{fontSize: '14pt', color: metrics.realProfit > 0 ? '#166534' : '#991b1b'}}>{formatCurrency(metrics.realProfit)} ({formatPercent(metrics.realMargin)})</td></tr>
@@ -423,21 +424,38 @@
                         </div>
                     )}
 
-                    <div style={{border: `3px solid ${getColor()}`, padding: '12px', borderRadius: '8px', backgroundColor: `${getColor()}10`}}>
-                        <div style={{fontSize: '11pt', fontWeight: 'bold', color: getColor(), textTransform: 'uppercase'}}>KHUYẾN NGHỊ HỆ THỐNG:</div>
-                        <div style={{fontSize: '18pt', fontWeight: 'bold', color: getColor(), margin: '8px 0'}}>{metrics.recommendation}</div>
-                        <div style={{fontSize: '10.5pt', fontStyle: 'italic'}}>"{metrics.reason}"</div>
+                    {/* LƯU Ý CÁC CHỈ SỐ QUAN TRỌNG */}
+                    <div style={{border: '2px solid #d97706', background: '#fffbeb', padding: '10px 12px', borderRadius: '8px'}}>
+                        <div style={{fontSize: '10.5pt', fontWeight: 'bold', color: '#92400e', textTransform: 'uppercase', marginBottom: '8px'}}>⚠ LƯU Ý CÁC CHỈ SỐ QUAN TRỌNG</div>
+                        <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '10pt', textAlign: 'center'}}>
+                            <tbody>
+                                <tr>
+                                    <td style={{width: '34%', padding: '4px', borderRight: '1px solid #fcd34d'}}>
+                                        <div style={{fontSize: '8.5pt', color: '#666'}}>Tổng Lãi/Lỗ Thực (Margin)</div>
+                                        <div style={{fontSize: '16pt', fontWeight: 'bold', color: metrics.realMargin > 0 ? '#166534' : '#991b1b'}}>{formatPercent(metrics.realMargin)}</div>
+                                    </td>
+                                    <td style={{width: '33%', padding: '4px', borderRight: '1px solid #fcd34d'}}>
+                                        <div style={{fontSize: '8.5pt', color: '#666'}}>Dự phòng rủi ro</div>
+                                        <div style={{fontSize: '16pt', fontWeight: 'bold', color: '#b45309'}}>{formatPercent(inputs.riskProvision)}</div>
+                                    </td>
+                                    <td style={{width: '33%', padding: '4px'}}>
+                                        <div style={{fontSize: '8.5pt', color: '#666'}}>Thay đổi Vốn Hiện vật</div>
+                                        <div style={{fontSize: '16pt', fontWeight: 'bold', color: metrics.volumeChangeRatio > 0 ? '#991b1b' : '#1e40af'}}>{metrics.volumeChangeRatio > 0 ? '-' : '+'}{formatPercent(Math.abs(metrics.volumeChangeRatio))}</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
 
-                    <div style={{marginTop: '8px', fontSize: '9pt', color: '#666'}}>
+                    <div style={{marginTop: '10px', fontSize: '9pt', color: '#666'}}>
                         <strong>Ý kiến người duyệt:</strong> ............................................................................................................................
                     </div>
 
-                    <div style={{marginTop: '20px', textAlign: 'center', fontSize: '10pt'}}>
+                    <div style={{marginTop: '25px', textAlign: 'center', fontSize: '10pt'}}>
                         <div style={{display: 'flex', justifyContent: 'space-around'}}>
-                            <div><strong>Người lập</strong><br/><small>(Ký, ghi rõ họ tên)</small><br/><br/><br/>{inputs.senderName}</div>
-                            <div><strong>TP Kinh Doanh</strong><br/><small>(Ký duyệt)</small><br/><br/><br/></div>
-                            <div><strong>Ban Giám Đốc</strong><br/><small>(Phê duyệt)</small><br/><br/><br/></div>
+                            <div><strong>Người lập</strong></div>
+                            <div><strong>TP Kinh Doanh</strong></div>
+                            <div><strong>Ban Giám Đốc</strong></div>
                         </div>
                     </div>
                 </div>
@@ -829,14 +847,22 @@
 
             // Lọc mã hàng theo độ dày / rộng / dài (so khớp gần đúng, bỏ trống = không lọc theo tiêu chí đó)
             const searchItems = (sTh, sW, sL) => {
-                const th = String(sTh ?? '').trim(), w = String(sW ?? '').trim(), l = String(sL ?? '').trim();
+                // Chuẩn hoá cả từ khoá tìm và dữ liệu (2.0 = 2, 1,5 = 1.5, C = c...)
+                const th = normDim(sTh), w = normDim(sW), l = normDim(sL);
                 if (!th && !w && !l) return [];
                 return index.items.filter(it => {
-                    if (th && String(it.thickness).indexOf(th) !== 0 && String(it.thickness) !== th) return false;
-                    if (w && String(it.width).indexOf(w) === -1) return false;
-                    if (l && String(it.length).indexOf(l) === -1) return false;
+                    // Độ dày: khớp chính xác sau chuẩn hoá (2.0 nhập vào = 2 trong kho)
+                    if (th && normDim(it.thickness) !== th) return false;
+                    // Rộng/Dài: chứa chuỗi sau chuẩn hoá (cho phép gõ một phần, vd "12" khớp "1250")
+                    if (w && normDim(it.width).indexOf(w) === -1) return false;
+                    if (l && normDim(it.length).indexOf(l) === -1) return false;
                     return true;
                 }).slice(0, 30);
+            };
+
+            // Xóa tìm kiếm 1 dòng: reset 3 ô tìm + bỏ liên kết mã (KHÔNG xóa giá/tên đã nhập)
+            const clearRowSearch = (id) => {
+                setProducts(prev => prev.map(p => p.id === id ? { ...p, sTh: '', sW: '', sL: '', skuKey: '', autoFilled: false } : p));
             };
 
             // Áp dữ liệu từ index vào 1 dòng hàng khi sale chọn mã (vẫn cho sửa tay sau đó)
@@ -1145,7 +1171,14 @@
                                                 <div className="mb-2 bg-blue-50 border border-blue-200 rounded p-2">
                                                     <div className="flex items-center justify-between mb-1">
                                                         <label className="text-[10px] uppercase font-bold text-blue-700 flex items-center gap-1"><Search className="w-3 h-3"/> Tìm hàng trong kho (theo kích thước)</label>
-                                                        {prod.autoFilled && <span className="text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">⚡ Đã tự điền</span>}
+                                                        <div className="flex items-center gap-1.5">
+                                                            {prod.autoFilled && <span className="text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">⚡ Đã tự điền</span>}
+                                                            {(prod.sTh || prod.sW || prod.sL || prod.skuKey) && (
+                                                                <button onClick={() => clearRowSearch(prod.id)} title="Xóa tìm kiếm" className="text-gray-400 hover:text-red-600 flex items-center gap-0.5 text-[9px]">
+                                                                    <Trash className="w-3 h-3"/> Xóa tìm
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     {index.items.length === 0 ? (
                                                         <div className="text-[11px] text-amber-600 italic py-1">⚠ Chưa có dữ liệu — bấm "Đồng bộ DL" trên thanh tiêu đề.</div>
@@ -1310,19 +1343,27 @@
 
                             {/* CỘT PHẢI - KẾT QUẢ */}
                             <div className="lg:col-span-6 space-y-6">
-                                <div className={`rounded-xl shadow-lg border-2 overflow-hidden transition-all duration-300 ${getStatusStyle(metrics.status)}`}>
-                                    <div className="p-6 flex flex-col md:flex-row items-center gap-6">
-                                        <div className="flex-shrink-0">{getIcon(metrics.status)}</div>
-                                        <div className="flex-1 text-center md:text-left">
-                                            <div className="text-xs font-bold uppercase tracking-widest opacity-60 mb-1">Hệ thống khuyến nghị (TỔNG ĐƠN):</div>
-                                            <h3 className="text-2xl font-bold mb-2 uppercase tracking-tight">{metrics.recommendation}</h3>
-                                            <div className="text-sm md:text-base font-medium opacity-90 space-y-1"><p>➤ {metrics.reason}</p></div>
+                                {/* PANEL LƯU Ý CHỈ SỐ QUAN TRỌNG */}
+                                <div className={`rounded-xl shadow-lg border-2 overflow-hidden ${metrics.realMargin <= 0 ? 'bg-red-50 border-red-400' : metrics.realMargin < 1 ? 'bg-amber-50 border-amber-400' : 'bg-emerald-50 border-emerald-400'}`}>
+                                    <div className="px-5 py-2.5 border-b border-current opacity-90 flex items-center gap-2" style={{borderColor: 'inherit'}}>
+                                        <AlertTriangle className={`w-5 h-5 ${metrics.realMargin <= 0 ? 'text-red-600' : metrics.realMargin < 1 ? 'text-amber-600' : 'text-emerald-600'}`} />
+                                        <span className={`text-sm font-bold uppercase tracking-wide ${metrics.realMargin <= 0 ? 'text-red-800' : metrics.realMargin < 1 ? 'text-amber-800' : 'text-emerald-800'}`}>Lưu ý các chỉ số quan trọng</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-200">
+                                        <div className="p-5 text-center">
+                                            <div className="text-[11px] uppercase font-bold text-gray-500 mb-1">Tổng Lãi/Lỗ Thực (Margin)</div>
+                                            <div className={`text-3xl font-bold ${metrics.realMargin > 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatPercent(metrics.realMargin)}</div>
+                                            <div className="text-[11px] text-gray-500 mt-1">{formatCurrency(metrics.realProfit)}</div>
                                         </div>
-                                        <div className="hidden md:block border-l border-current opacity-30 h-16 mx-2"></div>
-                                        <div className="hidden md:block text-right min-w-[120px]">
-                                            <div className="text-xs uppercase opacity-70 mb-1">Tổng Lãi/Lỗ Thực</div>
-                                            <div className={`text-2xl font-bold ${metrics.realMargin > 0 ? '' : 'text-red-700'}`}>{formatPercent(metrics.realMargin)}</div>
-                                            <div className="text-xs font-medium">Margin Tổng</div>
+                                        <div className="p-5 text-center">
+                                            <div className="text-[11px] uppercase font-bold text-gray-500 mb-1">Dự phòng rủi ro</div>
+                                            <div className="text-3xl font-bold text-amber-700">{formatPercent(inputs.riskProvision)}</div>
+                                            <div className="text-[11px] text-gray-500 mt-1">trên giá vốn</div>
+                                        </div>
+                                        <div className="p-5 text-center">
+                                            <div className="text-[11px] uppercase font-bold text-gray-500 mb-1">Thay đổi Vốn Hiện vật</div>
+                                            <div className={`text-3xl font-bold ${metrics.volumeChangeRatio > 0 ? 'text-red-700' : 'text-blue-700'}`}>{metrics.volumeChangeRatio > 0 ? '-' : '+'}{formatPercent(Math.abs(metrics.volumeChangeRatio))}</div>
+                                            <div className="text-[11px] text-gray-500 mt-1">{metrics.volumeChangeRatio > 0 ? 'Hụt vốn hiện vật' : 'Tăng vốn hiện vật'}</div>
                                         </div>
                                     </div>
                                 </div>
