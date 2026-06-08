@@ -289,7 +289,7 @@
         };
 
         // --- MẪU 2: BÁO CÁO PAKD ---
-        const PAKDReportPrint = ({ inputs, metrics, productList, printMode, index }) => {
+        const PAKDReportPrint = ({ inputs, metrics, productList, printMode, index, productWarnings }) => {
             const dateObj = new Date();
             const getColor = () => {
                 if (metrics.status === 'GREEN') return '#166534';
@@ -414,16 +414,28 @@
                         </table>
                     </div>
 
-                    {anyWarn && (
-                        <div style={{border: '1.5px solid #f59e0b', background: '#fffbeb', padding: '8px 12px', borderRadius: '6px', marginBottom: '12px', fontSize: '9.5pt'}}>
-                            <strong style={{color: '#92400e'}}>⚠ LƯU Ý CHO NGƯỜI DUYỆT:</strong>
-                            <ul style={{margin: '4px 0 0 0', paddingLeft: '18px', color: '#92400e'}}>
-                                {rows.filter(r => r.supplyColor === '#991b1b').map(r => <li key={'s'+r.p.id}>Mã "{r.p.name}" <strong>KHÔNG đủ hàng</strong> để giao theo số lượng đề xuất.</li>)}
-                                {rows.filter(r => r.reserved > 0).map(r => <li key={'p'+r.p.id}>Mã "{r.p.name}" có {new Intl.NumberFormat('vi-VN').format(r.reserved)}kg đã bị PO khác giữ chỗ.</li>)}
-                                {metrics.competitorStatus === 'WARN' && <li>Giá bán bình quân đang CAO HƠN giá đối thủ.</li>}
-                            </ul>
-                        </div>
-                    )}
+                    {(() => {
+                        const pw = (productWarnings || []).filter(w => w.msgs && w.msgs.length);
+                        const hasAny = pw.length > 0 || metrics.competitorStatus === 'WARN';
+                        if (!hasAny) return null;
+                        const color = { red: '#991b1b', orange: '#b45309', blue: '#1e40af' };
+                        return (
+                            <div style={{border: '1.5px solid #f59e0b', background: '#fffbeb', padding: '6px 10px', borderRadius: '6px', marginBottom: '10px', fontSize: '8pt', lineHeight: 1.35}}>
+                                <strong style={{color: '#92400e', fontSize: '9pt'}}>⚠ LƯU Ý CHO NGƯỜI DUYỆT (khối lượng &amp; giá vốn):</strong>
+                                <div style={{marginTop: '3px'}}>
+                                    {pw.map((w, i) => (
+                                        <div key={i} style={{marginBottom: '2px'}}>
+                                            <span style={{fontWeight: 'bold'}}>• {w.name || `Mặt hàng ${i+1}`}:</span>{' '}
+                                            {w.msgs.map((m, j) => (
+                                                <span key={j} style={{color: color[m.lv] || '#444'}}>{m.t}{j < w.msgs.length - 1 ? '  |  ' : ''}</span>
+                                            ))}
+                                        </div>
+                                    ))}
+                                    {metrics.competitorStatus === 'WARN' && <div style={{color: '#b45309'}}>• Giá bán bình quân đang CAO HƠN giá đối thủ.</div>}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* LƯU Ý CÁC CHỈ SỐ QUAN TRỌNG */}
                     <div style={{border: '2px solid #d97706', background: '#fffbeb', padding: '10px 12px', borderRadius: '8px'}}>
@@ -448,11 +460,11 @@
                         </table>
                     </div>
 
-                    <div style={{marginTop: '10px', fontSize: '9pt', color: '#666'}}>
+                    <div style={{marginTop: '8px', fontSize: '9pt', color: '#666'}}>
                         <strong>Ý kiến người duyệt:</strong> ............................................................................................................................
                     </div>
 
-                    <div style={{marginTop: '25px', textAlign: 'center', fontSize: '10pt'}}>
+                    <div style={{marginTop: '16px', textAlign: 'center', fontSize: '10pt'}}>
                         <div style={{display: 'flex', justifyContent: 'space-around'}}>
                             <div><strong>Người lập</strong></div>
                             <div><strong>TP Kinh Doanh</strong></div>
@@ -781,7 +793,7 @@
                 sunkCost: 0, sunkCostRatio: 0, volumeChangeRatio: 0,
                 avgSellPrice: 0, avgHistoricalCost: 0, avgReplacementCost: 0, avgCompetitorPrice: 0,
                 status: 'RED', recommendation: '', reason: '', warningLevel: '',
-                competitorStatus: '', totalAdditionalCosts: 0, depositInterest: 0, depositInterestRatio: 0
+                competitorStatus: '', totalAdditionalCosts: 0, depositInterest: 0, depositInterestRatio: 0, arBase: 0, futureFinCost: 0
             });
 
             const [printMode, setPrintMode] = useState(null);
@@ -988,12 +1000,14 @@
 
                 const accountingProfit = totalRevenue - totalCogsHistory - totalAdditionalCosts;
                 const capitalBase = totalCogsHistory;
-                const futureFinCost = capitalBase * (interestRateYear / 100) * (paymentDays / 365);
                 const riskCost = capitalBase * (riskProvision / 100);
 
-                // Lãi tiền gửi từ tiền KHÁCH ĐẶT CỌC TRƯỚC (cọc × lãi suất × số ngày tới giao / 365)
                 const depositAmt = inputs.depositAmount || 0;
                 const depositDays = inputs.depositDays || 0;
+                // Cọc làm GIẢM phần công nợ phải tài trợ vốn: dư nợ = vốn hàng - tiền cọc (không âm)
+                const arBase = Math.max(0, capitalBase - depositAmt);
+                const futureFinCost = arBase * (interestRateYear / 100) * (paymentDays / 365);
+                // Lãi tiền gửi từ tiền KHÁCH ĐẶT CỌC TRƯỚC (cọc × lãi suất × số ngày tới giao / 365)
                 const depositInterest = depositAmt * (interestRateYear / 100) * (depositDays / 365);
                 const depositInterestRatio = totalRevenue > 0 ? (depositInterest / totalRevenue) * 100 : 0;
 
@@ -1049,7 +1063,7 @@
                     }
                 }
 
-                setMetrics({ revenue: totalRevenue, accountingProfit, realProfit, realMargin, sunkCost, sunkCostRatio, volumeChangeRatio, avgSellPrice, avgHistoricalCost, avgReplacementCost, avgCompetitorPrice, status, recommendation, reason, warningLevel, competitorStatus, totalAdditionalCosts, depositInterest, depositInterestRatio });
+                setMetrics({ revenue: totalRevenue, accountingProfit, realProfit, realMargin, sunkCost, sunkCostRatio, volumeChangeRatio, avgSellPrice, avgHistoricalCost, avgReplacementCost, avgCompetitorPrice, status, recommendation, reason, warningLevel, competitorStatus, totalAdditionalCosts, depositInterest, depositInterestRatio, arBase, futureFinCost });
             }, [inputs, products]);
 
             useEffect(() => {
@@ -1300,7 +1314,15 @@
                                             <div><label className="text-xs font-bold text-gray-600">Tuổi kho (Tháng)</label><input type="number" name="inventoryAge" value={inputs.inventoryAge} onChange={handleInputChange} className={`w-full border rounded px-2 py-1.5 text-sm ${inputs.inventoryAge > 6 ? 'bg-purple-100 text-purple-800 font-bold' : ''}`} /></div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <div><label className="text-xs font-bold text-gray-600">Công nợ (Ngày)</label><input type="number" name="paymentDays" value={inputs.paymentDays} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm"/></div>
+                                            <div>
+                                                <label className="text-xs font-bold text-gray-600">Công nợ (Ngày)</label>
+                                                <input type="number" name="paymentDays" value={inputs.paymentDays} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm"/>
+                                                {inputs.depositAmount > 0 && (
+                                                    <div className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 mt-0.5">
+                                                        ➖ Đã trừ cọc {formatCurrency(inputs.depositAmount)} → chỉ tính lãi công nợ trên dư nợ còn lại {formatCurrency(metrics.arBase)}.
+                                                    </div>
+                                                )}
+                                            </div>
                                             <div><label className="text-xs font-bold text-gray-600">Dự phòng (%)</label><input type="number" name="riskProvision" step="0.1" value={inputs.riskProvision} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm bg-yellow-50"/></div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-3 pt-2 border-t border-dashed">
@@ -1497,7 +1519,7 @@
                     </div>
 
                     {printMode === 'quotation' && <QuotationPrint inputs={inputs} metrics={metrics} productList={products} printMode={printMode} />}
-                    {printMode === 'pakd' && <PAKDReportPrint inputs={inputs} metrics={metrics} productList={products} printMode={printMode} index={index} />}
+                    {printMode === 'pakd' && <PAKDReportPrint inputs={inputs} metrics={metrics} productList={products} printMode={printMode} index={index} productWarnings={products.map(p => ({ name: p.name, msgs: rowWarnings(p).msgs }))} />}
                 </div>
             );
         };
