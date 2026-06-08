@@ -405,7 +405,8 @@
                                 <tr><td style={{padding: '4px'}}>(-) Giá vốn hàng:</td><td className="text-right">-{formatCurrency(metrics.revenue - metrics.accountingProfit - metrics.totalAdditionalCosts)}</td></tr>
                                 <tr><td style={{padding: '4px'}}>(-) Chi phí Gia công &amp; Vận chuyển:</td><td className="text-right">-{formatCurrency(metrics.totalAdditionalCosts)}</td></tr>
                                 <tr style={{backgroundColor: '#f1f5f9'}}><td style={{padding: '4px'}}><strong>= Lợi nhuận Kế toán:</strong></td><td className="text-right">{formatCurrency(metrics.accountingProfit)}</td></tr>
-                                <tr><td style={{padding: '4px', color: '#666'}}>(-) Chi phí vốn & Rủi ro (lãi vay, dự phòng):</td><td className="text-right" style={{color: '#666'}}>-{formatCurrency(metrics.accountingProfit - metrics.realProfit)}</td></tr>
+                                <tr><td style={{padding: '4px', color: '#666'}}>(-) Chi phí vốn & Rủi ro (lãi tiền gửi, dự phòng):</td><td className="text-right" style={{color: '#666'}}>-{formatCurrency(metrics.accountingProfit - metrics.realProfit + (metrics.depositInterest||0))}</td></tr>
+                                {metrics.depositInterest > 0 && <tr><td style={{padding: '4px', color: '#166534'}}>(+) Lãi tiền gửi từ tiền đặt cọc:</td><td className="text-right" style={{color: '#166534'}}>+{formatCurrency(metrics.depositInterest)} ({formatPercent(metrics.depositInterestRatio)})</td></tr>}
                                 <tr style={{borderTop: '2px solid #000'}}><td style={{padding: '6px', fontSize: '12pt'}}><strong>KẾT QUẢ THỰC (NET PROFIT):</strong></td><td className="text-right" style={{fontSize: '14pt', color: metrics.realProfit > 0 ? '#166534' : '#991b1b'}}>{formatCurrency(metrics.realProfit)} ({formatPercent(metrics.realMargin)})</td></tr>
                                 <tr><td style={{padding: '4px', color: '#666'}}><strong>Thay đổi Vốn Hiện vật:</strong></td><td className="text-right" style={{fontSize: '11pt', fontWeight: 'bold', color: metrics.volumeChangeRatio > 0 ? '#991b1b' : '#1e40af'}}>{metrics.volumeChangeRatio > 0 ? '-' : '+'}{formatPercent(Math.abs(metrics.volumeChangeRatio))}</td></tr>
                                 <tr><td style={{padding: '4px', color: '#666'}}>Lãi vay đã mất (tồn {inputs.inventoryAge} tháng):</td><td className="text-right" style={{color:'#991b1b'}}>-{formatCurrency(metrics.sunkCost)} ({formatPercent(metrics.sunkCostRatio)})</td></tr>
@@ -633,7 +634,8 @@
                     result.byKey[key] = {
                         key, alloy: norm(alloy), temper: norm(temper), thickness: numVal(th),
                         width: norm(w), length: norm(l), coating: norm(co),
-                        avgCost: 0, stockCost: 0, transitCost: 0, stockKg: 0, transitKg: 0, transitInfo: [], sellRef: 0, minStock: 0
+                        avgCost: 0, stockCost: 0, transitCost: 0, stockKg: 0, transitKg: 0,
+                        transitInfo: [], transitBatches: [], sellRef: 0, minStock: 0
                     };
                 }
                 const it = result.byKey[key];
@@ -642,7 +644,9 @@
                 const status = norm(r.status);
                 if (status === 'IN_TRANSIT') {
                     it.transitKg += qty;
-                    if (cost > 0) it.transitCost = it.transitCost ? Math.round((it.transitCost + cost)/2) : cost; // giá vốn hàng đi đường
+                    if (cost > 0) it.transitCost = it.transitCost ? Math.round((it.transitCost + cost)/2) : cost; // giá vốn hàng đi đường (tham khảo)
+                    // Lưu TỪNG LÔ kèm giá riêng để tính giá vốn theo lớp (rẻ trước)
+                    if (qty > 0) it.transitBatches.push({ kg: qty, cost: cost || 0, eta: r.ExpectedDeliveryDate || '' });
                     if (r.ExpectedDeliveryDate) it.transitInfo.push({ kg: qty, eta: r.ExpectedDeliveryDate });
                 } else {
                     it.stockKg += qty;
@@ -657,7 +661,8 @@
                     result.byKey[key] = {
                         key, alloy: norm(r.alloy), temper: norm(r.temper), thickness: numVal(r.thickness),
                         width: norm(r.width), length: norm(r.length), coating: norm(r.Coating || r.coating),
-                        avgCost: 0, stockKg: 0, transitKg: 0, transitInfo: [], sellRef: 0, minStock: 0
+                        avgCost: 0, stockCost: 0, transitCost: 0, stockKg: 0, transitKg: 0,
+                        transitInfo: [], transitBatches: [], sellRef: 0, minStock: 0
                     };
                 }
                 const it = result.byKey[key];
@@ -757,6 +762,7 @@
                 customerName: 'CÔNG TY TNHH BUTRACO VIỆT NAM',
                 customerRank: 'VIP', buyFrequency: 'REGULAR',
                 inventoryAge: 0, interestRateYear: 7.6, riskProvision: 1.5, paymentDays: 30, vatRate: 10,
+                depositAmount: 0, depositDays: 0,
                 costTransport: 0, costProcessing: 0, costPackaging: 0,
                 quoteDate: new Date().toISOString().split('T')[0],
                 receiverName: 'Bà Trần Thị Dung', receiverTitle: 'Giám đốc', receiverMST: '', receiverPhone: '', receiverEmail: '',
@@ -775,7 +781,7 @@
                 sunkCost: 0, sunkCostRatio: 0, volumeChangeRatio: 0,
                 avgSellPrice: 0, avgHistoricalCost: 0, avgReplacementCost: 0, avgCompetitorPrice: 0,
                 status: 'RED', recommendation: '', reason: '', warningLevel: '',
-                competitorStatus: '', totalAdditionalCosts: 0
+                competitorStatus: '', totalAdditionalCosts: 0, depositInterest: 0, depositInterestRatio: 0
             });
 
             const [printMode, setPrintMode] = useState(null);
@@ -826,20 +832,12 @@
                 setProducts(products.map(p => {
                     if (p.id !== id) return p;
                     const np = { ...p, [field]: value };
-                    // Khi đổi số lượng trên dòng đã tự điền: tính lại giá vốn (pha trộn tồn + đi đường nếu bán vượt tồn)
+                    // Khi đổi số lượng trên dòng đã tự điền: tính lại giá vốn theo lớp
+                    // (tồn → lô đi đường rẻ trước → giá thay thế cho phần vượt)
                     if (field === 'quantity' && p.autoFilled && p.skuKey && index.byKey[p.skuKey]) {
                         const it = index.byKey[p.skuKey];
-                        const need = value || 0;
-                        const sc = it.stockCost || it.avgCost || 0;
-                        const tc = it.transitCost || 0;
-                        if (need > it.stockKg && it.stockKg > 0 && tc > 0 && tc !== sc) {
-                            const fromStock = it.stockKg;
-                            const fromTransit = Math.min(need - it.stockKg, it.transitKg);
-                            const tot = fromStock + fromTransit;
-                            np.historicalCost = tot > 0 ? Math.round((fromStock * sc + fromTransit * tc) / tot) : (it.avgCost || 0);
-                        } else {
-                            np.historicalCost = it.avgCost || 0;
-                        }
+                        const lc = layeredCost(it, value || 0);
+                        np.historicalCost = lc.cost || it.avgCost || 0;
                     }
                     return np;
                 }));
@@ -891,23 +889,39 @@
                 } : p));
             };
 
-            // Tính giá vốn trung bình trọng số khi bán vượt tồn (phần dư ăn vào hàng đi đường)
-            // Trả về { cost, blended } — blended=true nếu pha trộn 2 nguồn giá vốn.
-            const blendedCost = (it, need) => {
-                if (!it) return { cost: 0, blended: false };
+            // Tính giá vốn THEO LỚP khi bán vượt tồn:
+            //   1) Hàng tồn kho trước
+            //   2) Các lô hàng đi đường, GIÁ TĂNG DẦN (lô rẻ dùng trước, hết lô rẻ mới sang lô đắt)
+            //   3) Phần dư vượt cả tồn + đi đường → tính theo GIÁ THAY THẾ
+            // Trả về { cost (TB trọng số), layered, parts:[{label,kg,unit}], usedReplacement }
+            const layeredCost = (it, need) => {
+                if (!it || need <= 0) return { cost: (it && it.avgCost) || 0, layered: false, parts: [], usedReplacement: false };
                 const sc = it.stockCost || it.avgCost || 0;
-                const tc = it.transitCost || 0;
-                // Nếu bán nhiều hơn tồn kho và có hàng đi đường giá khác → trung bình trọng số
-                if (need > it.stockKg && it.stockKg > 0 && tc > 0 && tc !== sc) {
-                    const fromStock = it.stockKg;
-                    const fromTransit = Math.min(need - it.stockKg, it.transitKg);
-                    const totalQty = fromStock + fromTransit;
-                    if (totalQty > 0) {
-                        const cost = Math.round((fromStock * sc + fromTransit * tc) / totalQty);
-                        return { cost, blended: true, fromStock, fromTransit, sc, tc };
+                const parts = [];
+                let remain = need, totalCost = 0;
+                // 1) Hàng tồn
+                if (it.stockKg > 0 && sc > 0) {
+                    const take = Math.min(remain, it.stockKg);
+                    if (take > 0) { parts.push({ label: 'Tồn kho', kg: take, unit: sc }); totalCost += take * sc; remain -= take; }
+                }
+                // 2) Lô đi đường, rẻ trước
+                if (remain > 0 && it.transitBatches && it.transitBatches.length) {
+                    const batches = it.transitBatches.filter(b => b.kg > 0 && b.cost > 0).slice().sort((a,b) => a.cost - b.cost);
+                    for (const b of batches) {
+                        if (remain <= 0) break;
+                        const take = Math.min(remain, b.kg);
+                        parts.push({ label: 'Đi đường', kg: take, unit: b.cost }); totalCost += take * b.cost; remain -= take;
                     }
                 }
-                return { cost: it.avgCost || 0, blended: false };
+                // 3) Vượt cả tồn + đi đường → Giá Thay thế
+                let usedReplacement = false;
+                if (remain > 0) {
+                    const rc = it.replacementCost || sc || 0;
+                    usedReplacement = true;
+                    parts.push({ label: 'Giá thay thế', kg: remain, unit: rc }); totalCost += remain * rc; remain = 0;
+                }
+                const cost = need > 0 ? Math.round(totalCost / need) : 0;
+                return { cost, layered: parts.length > 1, parts, usedReplacement };
             };
 
             // Tính cảnh báo cho 1 dòng hàng: tồn / đi đường / PO giữ chỗ / giá vốn pha trộn
@@ -937,11 +951,15 @@
                         W.msgs.push({ lv: 'blue', t: `Bán xong tồn còn ${Math.max(0,it.stockKg-need).toLocaleString('vi-VN')}kg < mức min ${it.minStock.toLocaleString('vi-VN')}kg → nên đặt mua bổ sung.` });
                     }
                 }
-                // Giá vốn pha trộn khi bán vượt tồn
-                const bc = blendedCost(it, need);
-                W.blended = bc.blended; W.blendedCostVal = bc.cost;
-                if (bc.blended) {
-                    W.msgs.push({ lv: 'blue', t: `Bán vượt tồn: ${bc.fromStock.toLocaleString('vi-VN')}kg tồn (${bc.sc.toLocaleString('vi-VN')}đ) + ${bc.fromTransit.toLocaleString('vi-VN')}kg đi đường (${bc.tc.toLocaleString('vi-VN')}đ) → giá vốn TB ${bc.cost.toLocaleString('vi-VN')}đ.` });
+                // Giá vốn theo lớp khi bán vượt tồn (tồn → lô đi đường rẻ trước → giá thay thế)
+                const lc = layeredCost(it, need);
+                W.layered = lc.layered; W.layeredCostVal = lc.cost; W.usedReplacement = lc.usedReplacement;
+                if (lc.layered) {
+                    const detail = lc.parts.map(pp => `${pp.kg.toLocaleString('vi-VN')}kg${pp.label==='Đi đường'?' đi đường':pp.label==='Giá thay thế'?' giá thay thế':' tồn'} @${pp.unit.toLocaleString('vi-VN')}`).join(' + ');
+                    W.msgs.push({ lv: lc.usedReplacement ? 'orange' : 'blue', t: `Giá vốn theo lớp: ${detail} → TB ${lc.cost.toLocaleString('vi-VN')}đ.` });
+                    if (lc.usedReplacement) {
+                        W.msgs.push({ lv: 'orange', t: `Bán vượt cả tồn + đi đường — phần dư tính theo GIÁ THAY THẾ ${(it.replacementCost||0).toLocaleString('vi-VN')}đ.` });
+                    }
                 } else if (it.costSource === 'transit') {
                     W.msgs.push({ lv: 'blue', t: `Hết tồn kho — giá vốn (${(it.avgCost||0).toLocaleString('vi-VN')}đ) đang lấy theo hàng đi đường.` });
                 }
@@ -973,7 +991,13 @@
                 const futureFinCost = capitalBase * (interestRateYear / 100) * (paymentDays / 365);
                 const riskCost = capitalBase * (riskProvision / 100);
 
-                const realProfit = accountingProfit - futureFinCost - riskCost;
+                // Lãi tiền gửi từ tiền KHÁCH ĐẶT CỌC TRƯỚC (cọc × lãi suất × số ngày tới giao / 365)
+                const depositAmt = inputs.depositAmount || 0;
+                const depositDays = inputs.depositDays || 0;
+                const depositInterest = depositAmt * (interestRateYear / 100) * (depositDays / 365);
+                const depositInterestRatio = totalRevenue > 0 ? (depositInterest / totalRevenue) * 100 : 0;
+
+                const realProfit = accountingProfit - futureFinCost - riskCost + depositInterest;
                 const realMargin = totalRevenue > 0 ? (realProfit / totalRevenue) * 100 : 0;
 
                 const sunkCost = totalCogsHistory * (interestRateYear / 100) * (inventoryAge / 12);
@@ -1025,7 +1049,7 @@
                     }
                 }
 
-                setMetrics({ revenue: totalRevenue, accountingProfit, realProfit, realMargin, sunkCost, sunkCostRatio, volumeChangeRatio, avgSellPrice, avgHistoricalCost, avgReplacementCost, avgCompetitorPrice, status, recommendation, reason, warningLevel, competitorStatus, totalAdditionalCosts });
+                setMetrics({ revenue: totalRevenue, accountingProfit, realProfit, realMargin, sunkCost, sunkCostRatio, volumeChangeRatio, avgSellPrice, avgHistoricalCost, avgReplacementCost, avgCompetitorPrice, status, recommendation, reason, warningLevel, competitorStatus, totalAdditionalCosts, depositInterest, depositInterestRatio });
             }, [inputs, products]);
 
             useEffect(() => {
@@ -1037,7 +1061,7 @@
 
             const handleCurrencyInputChange = (e) => { const { name, value } = e.target; setInputs(prev => ({ ...prev, [name]: parseVNCurrency(value) })); };
             const handleInputChange = (e) => { const { name, value } = e.target;
-                const numericFields = ['inventoryAge', 'interestRateYear', 'riskProvision', 'paymentDays', 'vatRate']; setInputs(prev => ({ ...prev, [name]: numericFields.includes(name) ? (value === '' ? 0 : parseFloat(value)) : value }));
+                const numericFields = ['inventoryAge', 'interestRateYear', 'riskProvision', 'paymentDays', 'vatRate', 'depositDays']; setInputs(prev => ({ ...prev, [name]: numericFields.includes(name) ? (value === '' ? 0 : parseFloat(value)) : value }));
             };
 
             const handlePrintPAKD = () => { setPrintMode('pakd'); setTimeout(() => window.print(), 200); };
@@ -1272,7 +1296,7 @@
                                             <div><label className="text-xs font-bold text-gray-600">Tần Suất</label><select name="buyFrequency" value={inputs.buyFrequency} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm"><option value="REGULAR">Đều đặn</option><option value="WALKIN">Vãng lai</option></select></div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
-                                            <div><label className="text-xs font-bold text-gray-600">Lãi vay (%/Năm)</label><input type="number" name="interestRateYear" step="0.1" value={inputs.interestRateYear} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm font-medium text-blue-700"/></div>
+                                            <div><label className="text-xs font-bold text-gray-600">Lãi Tiền gửi (%/năm)</label><input type="number" name="interestRateYear" step="0.1" value={inputs.interestRateYear} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm font-medium text-blue-700"/></div>
                                             <div><label className="text-xs font-bold text-gray-600">Tuổi kho (Tháng)</label><input type="number" name="inventoryAge" value={inputs.inventoryAge} onChange={handleInputChange} className={`w-full border rounded px-2 py-1.5 text-sm ${inputs.inventoryAge > 6 ? 'bg-purple-100 text-purple-800 font-bold' : ''}`} /></div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
@@ -1290,6 +1314,24 @@
                                                 <input type="number" name="vatRate" step="0.5" value={inputs.vatRate} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm font-bold text-emerald-700 bg-emerald-50"/>
                                                 <div className="text-[9px] text-gray-400 mt-0.5">Mặc định 10%, chỉnh tay được</div>
                                             </div>
+                                        </div>
+                                        <div className="pt-2 border-t border-dashed">
+                                            <div className="text-[11px] font-bold text-blue-700 uppercase mb-1.5 flex items-center gap-1">💰 Tiền đặt cọc (tính lãi tiền gửi)</div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-600">Tiền đặt cọc (VNĐ)</label>
+                                                    <input type="text" name="depositAmount" value={inputs.depositAmount ? new Intl.NumberFormat('vi-VN').format(inputs.depositAmount) : ''} onChange={handleCurrencyInputChange} className="w-full border rounded px-2 py-1.5 text-sm font-medium text-blue-700 bg-blue-50" placeholder="0"/>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-600">Số ngày tới khi giao</label>
+                                                    <input type="number" name="depositDays" value={inputs.depositDays} onChange={handleInputChange} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="0"/>
+                                                </div>
+                                            </div>
+                                            {metrics.depositInterest > 0 && (
+                                                <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 mt-1.5">
+                                                    ➕ Lãi tiền gửi từ cọc: <b>{formatCurrency(metrics.depositInterest)}</b> ({formatPercent(metrics.depositInterestRatio)}) — đã cộng vào Lãi thực.
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
