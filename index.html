@@ -222,6 +222,7 @@
         // --- MẪU 1: BÁO GIÁ CHO KHÁCH HÀNG ---
         const QuotationPrint = ({ inputs, metrics, productList, printMode }) => {
             const totalRevenue = metrics.revenue;
+            const totalKg = productList.reduce((s, p) => s + (p.quantity || 0), 0);
             const vatPct = (inputs.vatRate != null ? inputs.vatRate : 10);
             const vat = totalRevenue * (vatPct / 100);
             const totalWithVAT = totalRevenue + vat;
@@ -270,7 +271,7 @@
                                 </tr>
                             ))}
                             {[...Array(Math.max(0, 5 - productList.length))].map((_, i) => <tr key={`e-${i}`}><td style={{height:'25px'}}></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>)}
-                            <tr style={{fontWeight: 'bold'}}><td colSpan="7" className="text-right">Cộng tiền hàng:</td><td className="text-right">{new Intl.NumberFormat('vi-VN').format(totalRevenue)}</td></tr>
+                            <tr style={{fontWeight: 'bold', backgroundColor: '#f8f8f8'}}><td colSpan="5" className="text-right">Tổng cộng:</td><td className="text-right">{new Intl.NumberFormat('vi-VN').format(totalKg)}</td><td className="text-right">Cộng tiền hàng:</td><td className="text-right">{new Intl.NumberFormat('vi-VN').format(totalRevenue)}</td></tr>
                             <tr style={{fontWeight: 'bold'}}><td colSpan="7" className="text-right">Thuế VAT ({vatPct}%):</td><td className="text-right">{new Intl.NumberFormat('vi-VN').format(vat)}</td></tr>
                             <tr style={{fontWeight: 'bold', fontSize: '12pt'}}><td colSpan="7" className="text-right">TỔNG CỘNG:</td><td className="text-right">{new Intl.NumberFormat('vi-VN').format(totalWithVAT)} VNĐ</td></tr>
                         </tbody>
@@ -300,6 +301,7 @@
             };
             const vat = metrics.revenue * ((inputs.vatRate || 0) / 100);
             const totalWithVat = metrics.revenue + vat;
+            const totalKg = productList.reduce((s, p) => s + (p.quantity || 0), 0);
 
             // Tổng hợp tình trạng hàng & cảnh báo từng dòng (dùng index nếu có)
             const idx = index || { byKey: {}, poByKey: {} };
@@ -362,6 +364,12 @@
                                         <td className="text-right">{new Intl.NumberFormat('vi-VN').format(p.quantity * p.sellPrice)}</td>
                                     </tr>
                                 ))}
+                                <tr style={{fontWeight: 'bold', backgroundColor: '#f1f5f9'}}>
+                                    <td className="text-left">TỔNG CỘNG ({productList.length} mặt hàng)</td>
+                                    <td className="text-right">{new Intl.NumberFormat('vi-VN').format(totalKg)}</td>
+                                    <td></td><td></td><td></td>
+                                    <td className="text-right">{new Intl.NumberFormat('vi-VN').format(metrics.revenue)}</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -386,6 +394,14 @@
                                         <td style={{color: supplyColor, fontWeight: 'bold'}}>{supply}</td>
                                     </tr>
                                 ))}
+                                <tr style={{fontWeight: 'bold', backgroundColor: '#f1f5f9'}}>
+                                    <td className="text-left">TỔNG CỘNG</td>
+                                    <td className="text-right">{new Intl.NumberFormat('vi-VN').format(totalKg)}</td>
+                                    <td className="text-right">{new Intl.NumberFormat('vi-VN').format(rows.reduce((s, r) => s + (r.stockKg || 0), 0))}</td>
+                                    <td className="text-right">{new Intl.NumberFormat('vi-VN').format(rows.reduce((s, r) => s + (r.reserved || 0), 0))}</td>
+                                    <td className="text-right">{new Intl.NumberFormat('vi-VN').format(rows.reduce((s, r) => s + (r.transitKg || 0), 0))}</td>
+                                    <td></td>
+                                </tr>
                             </tbody>
                         </table>
                         {rows.some(r => r.poList.length > 0) && (
@@ -399,6 +415,7 @@
                         <h3 style={{borderBottom: '1px solid #ccc', paddingBottom: '5px', color: '#444'}}>III. PHÂN TÍCH HIỆU QUẢ</h3>
                         <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '11pt'}}>
                             <tbody>
+                                <tr style={{backgroundColor: '#eff6ff'}}><td style={{padding: '4px'}}><strong>Tổng khối lượng bán:</strong></td><td className="text-right" style={{fontWeight: 'bold'}}>{new Intl.NumberFormat('vi-VN').format(totalKg)} kg</td></tr>
                                 <tr><td style={{padding: '4px'}}>Giá trị đơn (chưa VAT):</td><td className="text-right">{formatCurrency(metrics.revenue)}</td></tr>
                                 <tr><td style={{padding: '4px'}}>Thuế VAT ({inputs.vatRate}%):</td><td className="text-right">{formatCurrency(vat)}</td></tr>
                                 <tr style={{backgroundColor: '#ecfdf5'}}><td style={{padding: '4px'}}><strong>Tổng giá trị (có VAT):</strong></td><td className="text-right" style={{fontWeight: 'bold'}}>{formatCurrency(totalWithVat)}</td></tr>
@@ -789,7 +806,7 @@
             });
 
             const [metrics, setMetrics] = useState({
-                revenue: 0, accountingProfit: 0, realProfit: 0, realMargin: 0,
+                revenue: 0, totalQuantity: 0, accountingProfit: 0, realProfit: 0, realMargin: 0,
                 sunkCost: 0, sunkCostRatio: 0, volumeChangeRatio: 0,
                 avgSellPrice: 0, avgHistoricalCost: 0, avgReplacementCost: 0, avgCompetitorPrice: 0,
                 status: 'RED', recommendation: '', reason: '', warningLevel: '',
@@ -1063,7 +1080,7 @@
                     }
                 }
 
-                setMetrics({ revenue: totalRevenue, accountingProfit, realProfit, realMargin, sunkCost, sunkCostRatio, volumeChangeRatio, avgSellPrice, avgHistoricalCost, avgReplacementCost, avgCompetitorPrice, status, recommendation, reason, warningLevel, competitorStatus, totalAdditionalCosts, depositInterest, depositInterestRatio, arBase, futureFinCost });
+                setMetrics({ revenue: totalRevenue, totalQuantity, accountingProfit, realProfit, realMargin, sunkCost, sunkCostRatio, volumeChangeRatio, avgSellPrice, avgHistoricalCost, avgReplacementCost, avgCompetitorPrice, status, recommendation, reason, warningLevel, competitorStatus, totalAdditionalCosts, depositInterest, depositInterestRatio, arBase, futureFinCost });
             }, [inputs, products]);
 
             useEffect(() => {
@@ -1196,7 +1213,10 @@
                                 <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
                                     <div className="bg-gray-100 px-5 py-3 border-b border-gray-200 flex justify-between items-center">
                                         <h2 className="font-bold text-gray-700 flex items-center gap-2 text-sm uppercase"><RefreshCcw className="w-4 h-4 text-blue-600" /> 1. Danh sách Hàng hóa</h2>
-                                        <button onClick={addProduct} className="text-xs bg-blue-600 text-white px-2 py-1 rounded flex items-center gap-1 hover:bg-blue-700"><Plus className="w-3 h-3"/> Thêm dòng</button>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-1 rounded whitespace-nowrap">Σ {new Intl.NumberFormat('vi-VN').format(metrics.totalQuantity)} kg · {products.length} mặt hàng</span>
+                                            <button onClick={addProduct} className="text-xs bg-blue-600 text-white px-2 py-1 rounded flex items-center gap-1 hover:bg-blue-700"><Plus className="w-3 h-3"/> Thêm dòng</button>
+                                        </div>
                                     </div>
                                     <div className="p-3 space-y-4 max-h-[500px] overflow-y-auto">
                                         {products.map((prod, idx) => {
@@ -1436,6 +1456,10 @@
                                 <div className="bg-white rounded-xl shadow border border-emerald-200 p-5">
                                     <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2"><Calculator className="w-4 h-4 text-emerald-600"/> Giá trị đơn hàng</h4>
                                     <div className="space-y-2">
+                                        <div className="flex justify-between items-baseline border-b border-dashed pb-2">
+                                            <span className="text-sm font-bold text-blue-800">Tổng khối lượng đơn hàng</span>
+                                            <span className="font-bold text-blue-700 text-lg">{new Intl.NumberFormat('vi-VN').format(metrics.totalQuantity)} kg</span>
+                                        </div>
                                         <div className="flex justify-between items-baseline">
                                             <span className="text-sm text-gray-600">Giá trị chưa VAT</span>
                                             <span className="font-bold text-gray-800 text-lg">{formatCurrency(metrics.revenue)}</span>
